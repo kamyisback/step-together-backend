@@ -83,6 +83,30 @@ app.get('/', (req, res) => {
   res.send('Step By Step backend is running with MongoDB Atlas!');
 });
 
+// Join user to all community channels
+app.post('/joinCommunityChannels', async (req, res) => {
+  const { userId } = req.body;
+  if (!userId) {
+    return res.status(400).json({ error: 'userId required' });
+  }
+  try {
+    // Fetch all channels of custom type "community"
+    const channels = await serverClient.queryChannels({ type: 'community' });
+    await Promise.all(
+      channels.map(async (ch) => {
+        const isMember = ch.state.members.some((m) => m.user_id === userId);
+        if (!isMember) {
+          await serverClient.channel('community', ch.id).addMembers([userId]);
+        }
+      })
+    );
+    res.json({ joined: true, channels: channels.length });
+  } catch (err) {
+    console.error('joinCommunityChannels error', err);
+    res.status(500).json({ error: 'Failed to join community channels' });
+  }
+});
+
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`Backend running on http://localhost:${PORT}`);
