@@ -94,9 +94,13 @@ app.post('/joinCommunityChannels', async (req, res) => {
     const channels = await serverClient.queryChannels({ type: 'community' });
     await Promise.all(
       channels.map(async (ch) => {
-        const isMember = ch.state.members.some((m) => m.user_id === userId);
-        if (!isMember) {
-          await serverClient.channel('community', ch.id).addMembers([userId]);
+        try {
+          await serverClient.channel(ch.type, ch.id).addMembers([userId]);
+        } catch (e) {
+          // Ignore error if user already member
+          if (e.code !== 16) { // 16 = user already a member
+            console.error(`addMembers failed for channel ${ch.id}`, e);
+          }
         }
       })
     );
