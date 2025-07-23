@@ -160,6 +160,14 @@ app.get('/logs', async (req, res) => {
       .sort({ createdAt: -1 })
       .skip(parseInt(page) * parseInt(pageSize))
       .limit(parseInt(pageSize));
+    // caching
+    res.set('Cache-Control', 'public, max-age=30');
+    // simple ETag based on count + latest updatedAt
+    const etag = `${entries.length}-${entries[0]?.updatedAt?.getTime() || 0}`;
+    if (req.headers['if-none-match'] === etag) {
+      return res.status(304).end();
+    }
+    res.set('ETag', etag);
     res.json(entries);
   } catch (err) {
     console.error('logs query error', err);
