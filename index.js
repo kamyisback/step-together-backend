@@ -32,6 +32,17 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
+// === LogEntry Schema ===
+const logEntrySchema = new mongoose.Schema({
+  messageId: { type: String, unique: true },
+  coachId: String,
+  text: String,
+  imageUrls: [String],
+  createdAt: Date,
+  category: { type: String, default: 'food' }
+});
+logEntrySchema.index({ coachId: 1, createdAt: -1 });
+const LogEntry = mongoose.model('LogEntry', logEntrySchema);
 // Removed seed logic for initial coach
 
 function sanitizeUserId(email) {
@@ -108,6 +119,51 @@ app.post('/joinCommunityChannels', async (req, res) => {
   } catch (err) {
     console.error('joinCommunityChannels error', err);
     res.status(500).json({ error: 'Failed to join community channels' });
+  }
+});
+
+// ==== Log Endpoints ====
+
+// Create a log entry (called by mobile after broadcast succeeds, or can be used by webhook)
+app.post('/logEntry', async (req, res) => {
+  const { messageId, coachId, text, imageUrls, createdAt, category } = req.body;
+  if (!messageId || !coachId || !createdAt) {
+    return res.status(400).json({ error: 'messageId, coachId, createdAt required' });
+  }
+  try {
+    await LogEntry.updateOne(
+      { messageId },
+      { messageId, coachId, text: text || '', imageUrls: imageUrls || [], createdAt, category: category || 'food' },
+      { upsert: true }
+    );
+    res.json({ saved: true });
+  } catch (err) {
+    console.error('logEntry save error', err);
+    res.status(500).json({ error: 'Failed to save log entry' });
+  }
+});
+
+// Get logs for a coach and optional date (YYYY-MM-DD)
+app.get('/logs', async (req, res) => {
+  const { coachId, date, page = 0, pageSize = 20 } = req.query;
+  if (!coachId || !date) {
+    return res.status(400).json({ error: 'coachId and date required' });
+  }
+  try {
+    const start = new Date(date);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+    const entries = await LogEntry.find({
+      coachId,
+      createdAt: { $gte: start, $lt: end }
+    })
+      .sort({ createdAt: -1 })
+      .skip(parseInt(page) * parseInt(pageSize))
+      .limit(parseInt(pageSize));
+    res.json(entries);
+  } catch (err) {
+    console.error('logs query error', err);
+    res.status(500).json({ error: 'Failed to fetch logs' });
   }
 });
 
