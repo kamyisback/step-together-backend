@@ -193,12 +193,15 @@ app.post('/logEntry', async (req, res) => {
 
 // Get logs for a coach and optional date (YYYY-MM-DD)
 app.get('/logs', async (req, res) => {
-  const { coachId, date, page = 0, pageSize = 20 } = req.query;
+  const { coachId, date, page = 0, pageSize = 20, tzOffset = "0" } = req.query;
   if (!coachId || !date) {
     return res.status(400).json({ error: 'coachId and date required' });
   }
   try {
+    const offsetMinutes = parseInt(tzOffset);
+    // Interpret provided date as local day in the user's timezone.
     const start = new Date(date);
+    start.setMinutes(start.getMinutes() - offsetMinutes);
     const end = new Date(start);
     end.setDate(end.getDate() + 1);
     const entries = await LogEntry.find({
