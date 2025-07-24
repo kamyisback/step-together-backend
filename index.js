@@ -131,6 +131,12 @@ app.get('/coaches', async (req, res) => {
   res.json(coaches);
 });
 
+// GET /users endpoint (all users)
+app.get('/users', async (req, res) => {
+  const users = await User.find({}, { password: 0 });
+  res.json(users);
+});
+
 // Health check
 app.get('/', (req, res) => {
   res.send('Step By Step backend is running with MongoDB Atlas!');
