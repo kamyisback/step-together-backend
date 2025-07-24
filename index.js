@@ -45,8 +45,6 @@ async function seedCourses() {
   }
 }
 
-seedCourses();
-
 const userSchema = new mongoose.Schema({
   userId: { type: String, unique: true },
   email: String,
@@ -72,6 +70,9 @@ const courseAccessSchema = new mongoose.Schema({
 });
 courseAccessSchema.index({ userId: 1, courseId: 1 }, { unique: true });
 const CourseAccess = mongoose.model('CourseAccess', courseAccessSchema);
+
+// call seeding after models initialized
+seedCourses();
 
 // === LogEntry Schema ===
 const logEntrySchema = new mongoose.Schema({
