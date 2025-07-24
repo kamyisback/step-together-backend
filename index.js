@@ -23,6 +23,30 @@ mongoose.connect(MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true 
   .then(() => console.log('Connected to MongoDB Atlas'))
   .catch(err => console.error('MongoDB connection error:', err));
 
+// === Seed base courses (run once at startup) ===
+async function seedCourses() {
+  const baseCourses = [
+    {
+      id: 'kickstart7',
+      title: '7-Day Kickstart',
+      coverURL: 'https://ohio.stream-io-cdn.com/1405499/images/58621ff6-e1c7-4a0a-b73a-f174e061e20b.messaging--members-kzql9NDxXojvpZYMnqK8Cjsp-.jpg?Key-Pair-Id=APKAIHG36VEWPDULE23Q&Policy=eyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly9vaGlvLnN0cmVhbS1pby1jZG4uY29tLzE0MDU0OTkvaW1hZ2VzLzU4NjIxZmY2LWUxYzctNGEwYS1iNzNhLWYxNzRlMDYxZTIwYi5tZXNzYWdpbmctLW1lbWJlcnMta3pxbDlORHhYb2p2cFpZTW5xSzhDanNwLS5qcGc~Km9oPTIwMDIqb3c9MzAwMCoiLCJDb25kaXRpb24iOnsiRGF0ZUxlc3NUaGFuIjp7IkFXUzpFcG9jaFRpbWUiOjE3NTQ1MTY5MzJ9fX1dfQ__&Signature=pENtQmh3WiV~8XME-8m7K5hKBgYV2tqjClxv35mKbgLRqh1JMB1Es0kCKrbj7XQhFVF85lm68JWk880JwL-8DNdOmbMNPGq64ipo-bI-DaUCE9AffX2-2CIm6aGBQaUS-TNygT-63mG~-JmV8mZR7jeNQLiyjHUwmbZl0dg0IHVWW4xyS2BgU1cLsHm5GO28Zt7LxgeXwBF1yw32TWgUSGgGkGLG7pFE6zpwUBV08j3wc2FDX0DR~Il2mPglfGOznOO8~O4pwc7ZaNdjRxvFYxd~LtvvkBDZW5Bra~M01tJlKKfxDNlfqO51X0f3MpC8b9B8ujEQeRCprxV1It~JNQ__&oh=2002&ow=3000',
+      isFree: true
+    },
+    {
+      id: 'stepTogether',
+      title: 'Step Together Program',
+      coverURL: 'https://ohio.stream-io-cdn.com/1405499/images/4c98ceee-776b-4957-8b2e-6550949c896f.messaging--members-6TiLv6ulQZbKbAxQfzHXQJD-_.jpg?Key-Pair-Id=APKAIHG36VEWPDULE23Q&Policy=eyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly9vaGlvLnN0cmVhbS1pby1jZG4uY29tLzE0MDU0OTkvaW1hZ2VzLzRjOThjZWVlLTc3NmItNDk1Ny04YjJlLTY1NTA5NDljODk2Zi5tZXNzYWdpbmctLW1lbWJlcnMtNlRpTHY2dWxRWmJLYkF4UWZ6SFhRSkQtXy5qcGc~Km9oPTI4NDgqb3c9NDI4OCoiLCJDb25kaXRpb24iOnsiRGF0ZUxlc3NUaGFuIjp7IkFXUzpFcG9jaFRpbWUiOjE3NTQ1MjIxNTZ9fX1dfQ__&Signature=lOJDT5sOYzbuqailbJ~VnPugrd15aLLJbgW8dEw-Y8YsUz-3UmSxe4v3u8CUnSjoqff0rkCuTHmiRyWtKDP7DW4JbeaMVDIEx~ksQ5~OzT4zJB~RVWuinxPczi9~GEF0KhbNY8gY49QDuhhT8A9w~TLLQlAGbv8RhGVcH~oEmhWF5bJ1tGILzWbnm-NZd2coBksnkXBujHob3vF32wPECwrk2Praupb5hsqYl7qe0MrScDqAOhqo9WYY71YT9J3bWDri328H5-NX6tsCeL2CHHW-H0sH5eu3l6KbQLQNb5Bj67FvpTzBoFlKksd9WdqxbjyLb1llAr0xPOc5BpfegA__&oh=2848&ow=4288',
+      isFree: false
+    }
+  ];
+
+  for (const c of baseCourses) {
+    await Course.updateOne({ id: c.id }, c, { upsert: true });
+  }
+}
+
+seedCourses();
+
 const userSchema = new mongoose.Schema({
   userId: { type: String, unique: true },
   email: String,
@@ -31,6 +55,23 @@ const userSchema = new mongoose.Schema({
   role: { type: String, default: 'client' } // 'coach' or 'client'
 });
 const User = mongoose.model('User', userSchema);
+
+// === Course & Access Schemas ===
+const courseSchema = new mongoose.Schema({
+  id: { type: String, unique: true },
+  title: String,
+  coverURL: String,
+  isFree: { type: Boolean, default: false }
+});
+const Course = mongoose.model('Course', courseSchema);
+
+const courseAccessSchema = new mongoose.Schema({
+  userId: String,
+  courseId: String,
+  unlockedAt: { type: Date, default: Date.now }
+});
+courseAccessSchema.index({ userId: 1, courseId: 1 }, { unique: true });
+const CourseAccess = mongoose.model('CourseAccess', courseAccessSchema);
 
 // === LogEntry Schema ===
 const logEntrySchema = new mongoose.Schema({
@@ -172,6 +213,42 @@ app.get('/logs', async (req, res) => {
   } catch (err) {
     console.error('logs query error', err);
     res.status(500).json({ error: 'Failed to fetch logs' });
+  }
+});
+
+// === Course Endpoints ====
+
+// GET /courses?userId=abc
+app.get('/courses', async (req, res) => {
+  const { userId } = req.query;
+  if (!userId) return res.status(400).json({ error: 'userId required' });
+  try {
+    const courses = await Course.find();
+    const accesses = await CourseAccess.find({ userId });
+    const set = new Set(accesses.map(a => a.courseId));
+    const payload = courses.map(c => ({
+      id: c.id,
+      title: c.title,
+      coverURL: c.coverURL,
+      locked: !c.isFree && !set.has(c.id)
+    }));
+    res.json(payload);
+  } catch (err) {
+    console.error('courses error', err);
+    res.status(500).json({ error: 'Failed to fetch courses' });
+  }
+});
+
+// POST /unlockCourse { userId, courseId }
+app.post('/unlockCourse', async (req, res) => {
+  const { userId, courseId } = req.body;
+  if (!userId || !courseId) return res.status(400).json({ error: 'userId & courseId required' });
+  try {
+    await CourseAccess.updateOne({ userId, courseId }, { userId, courseId }, { upsert: true });
+    res.json({ unlocked: true });
+  } catch (err) {
+    console.error('unlockCourse error', err);
+    res.status(500).json({ error: 'Failed to unlock course' });
   }
 });
 
