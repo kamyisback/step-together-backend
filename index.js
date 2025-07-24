@@ -259,6 +259,19 @@ app.post('/unlockCourse', async (req, res) => {
   }
 });
 
+// POST /removeCourse { userId, courseId }
+app.post('/removeCourse', async (req, res) => {
+  const { userId, courseId } = req.body;
+  if (!userId || !courseId) return res.status(400).json({ error: 'userId & courseId required' });
+  try {
+    await CourseAccess.deleteOne({ userId, courseId });
+    res.json({ removed: true });
+  } catch (err) {
+    console.error('removeCourse error', err);
+    res.status(500).json({ error: 'Failed to remove course access' });
+  }
+});
+
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`Backend running on http://localhost:${PORT}`);
