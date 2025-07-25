@@ -226,6 +226,47 @@ app.get('/logs', async (req, res) => {
   }
 });
 
+// Get dates that have log entries for a coach within a date range
+app.get('/logs/dates', async (req, res) => {
+  const { coachId, startDate, endDate, tzOffset = "0" } = req.query;
+  if (!coachId || !startDate || !endDate) {
+    return res.status(400).json({ error: 'coachId, startDate, and endDate required' });
+  }
+  try {
+    const offsetMinutes = parseInt(tzOffset);
+    
+    // Parse start and end dates accounting for timezone
+    const start = new Date(startDate);
+    start.setMinutes(start.getMinutes() - offsetMinutes);
+    const end = new Date(endDate);
+    end.setMinutes(end.getMinutes() - offsetMinutes);
+    end.setDate(end.getDate() + 1); // Include the end date
+    
+    // Get all log entries in the date range
+    const entries = await LogEntry.find({
+      coachId,
+      createdAt: { $gte: start, $lt: end }
+    }).select('createdAt');
+    
+    // Extract unique dates (YYYY-MM-DD format in user's timezone)
+    const dateSet = new Set();
+    entries.forEach(entry => {
+      const localDate = new Date(entry.createdAt.getTime() + (offsetMinutes * 60 * 1000));
+      const dateString = localDate.toISOString().split('T')[0];
+      dateSet.add(dateString);
+    });
+    
+    const dates = Array.from(dateSet).sort();
+    
+    // Cache for 5 minutes since this changes infrequently
+    res.set('Cache-Control', 'public, max-age=300');
+    res.json(dates);
+  } catch (err) {
+    console.error('logs/dates query error', err);
+    res.status(500).json({ error: 'Failed to fetch log dates' });
+  }
+});
+
 // === Course Endpoints ====
 
 // GET /courses?userId=abc
