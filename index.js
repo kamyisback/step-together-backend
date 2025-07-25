@@ -267,6 +267,29 @@ app.get('/logs/dates', async (req, res) => {
   }
 });
 
+// Delete a log entry
+app.delete('/logEntry/:messageId', async (req, res) => {
+  const { messageId } = req.params;
+  const { coachId } = req.query;
+  
+  if (!messageId || !coachId) {
+    return res.status(400).json({ error: 'messageId and coachId required' });
+  }
+  
+  try {
+    const result = await LogEntry.deleteOne({ messageId, coachId });
+    
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ error: 'Log entry not found or not authorized' });
+    }
+    
+    res.json({ deleted: true, messageId });
+  } catch (err) {
+    console.error('logEntry delete error', err);
+    res.status(500).json({ error: 'Failed to delete log entry' });
+  }
+});
+
 // === Course Endpoints ====
 
 // GET /courses?userId=abc
