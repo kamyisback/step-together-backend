@@ -46,8 +46,12 @@ async function seedCourses() {
 }
 
 const userSchema = new mongoose.Schema({
-  userId: { type: String, unique: true },
-  email: String,
+  userId: { type: String, unique: true }, // Stable ID for Stream Chat: user_[ObjectId]
+  email: String,                          // User's current email for authentication
+  emailHistory: [{                        // Previous emails for support/recovery
+    email: String,
+    changedAt: { type: Date, default: Date.now }
+  }],
   name: String,
   password: String,
   role: { type: String, default: 'client' } // 'coach' or 'client'
@@ -87,11 +91,7 @@ logEntrySchema.index({ coachId: 1, createdAt: -1 });
 const LogEntry = mongoose.model('LogEntry', logEntrySchema);
 // Removed seed logic for initial coach
 
-function sanitizeUserId(email) {
-  // Convert email to Stream-compatible userId by replacing dots with underscores
-  // Keep @ and other valid characters, but replace periods specifically
-  return email.toLowerCase().replace(/\./g, '_');
-}
+
 
 // Register endpoint
 app.post('/register', async (req, res) => {
@@ -114,19 +114,22 @@ app.post('/register', async (req, res) => {
   }
   
   const hash = await bcrypt.hash(password, 10);
-  const sanitizedUserId = sanitizeUserId(email);
   
-  // Store actual email for display, sanitized userId for Stream Chat
-  await User.create({ 
-    userId: sanitizedUserId, 
+  // Create new user and use MongoDB ObjectId as stable Stream user ID
+  const newUser = await User.create({ 
     email, 
     name, 
     password: hash, 
     ...(role && { role }) 
   });
   
-  const token = serverClient.createToken(sanitizedUserId);
-  res.json({ token, name, role: role || 'client' });
+  // Update user with stable userId based on ObjectId
+  const stableUserId = `user_${newUser._id.toString()}`;
+  newUser.userId = stableUserId;
+  await newUser.save();
+  
+  const token = serverClient.createToken(stableUserId);
+  res.json({ token, name, role: role || 'client', userId: stableUserId });
 });
 
 // Login endpoint
@@ -153,9 +156,9 @@ app.post('/login', async (req, res) => {
     return res.status(401).json({ error: 'Invalid credentials' });
   }
   
-  // Use the stored sanitized userId for Stream token
+  // Use the stored stable userId for Stream token
   const token = serverClient.createToken(user.userId);
-  res.json({ token, name: user.name, role: user.role });
+  res.json({ token, name: user.name, role: user.role, userId: user.userId });
 });
 
 // GET /coaches endpoint
@@ -390,26 +393,114 @@ app.post('/updateEmail', async (req, res) => {
       return res.status(400).json({ error: 'Email already in use' });
     }
     
-    const newSanitizedUserId = sanitizeUserId(newEmail);
-    
-    // Find user by old email and update both email and userId
-    const updatedUser = await User.findOneAndUpdate(
-      { email: oldEmail },
-      { 
-        email: newEmail,
-        userId: newSanitizedUserId // Update userId to sanitized version
-      },
-      { new: true }
-    );
-    
-    if (!updatedUser) {
+    // Find user by old email first
+    const user = await User.findOne({ email: oldEmail });
+    if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
     
-    res.json({ success: true, email: updatedUser.email });
+    // Add current email to history before updating
+    user.emailHistory.push({
+      email: oldEmail,
+      changedAt: new Date()
+    });
+    
+    // Update to new email
+    user.email = newEmail;
+    
+    // Save changes
+    const updatedUser = await user.save();
+    
+    res.json({ 
+      success: true, 
+      email: updatedUser.email, 
+      userId: updatedUser.userId,
+      emailHistoryCount: updatedUser.emailHistory.length
+    });
   } catch (err) {
     console.error('updateEmail error:', err);
     res.status(500).json({ error: 'Failed to update email' });
+  }
+});
+
+// Get user email history (for support purposes)
+app.get('/user-email-history/:email', async (req, res) => {
+  const { email } = req.params;
+  if (!email) return res.status(400).json({ error: 'Email parameter required' });
+  
+  try {
+    // Find user by current email
+    const user = await User.findOne({ email }, { 
+      email: 1, 
+      emailHistory: 1, 
+      name: 1, 
+      userId: 1,
+      role: 1,
+      _id: 1
+    });
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    res.json({
+      userId: user.userId,
+      name: user.name,
+      role: user.role,
+      currentEmail: user.email,
+      emailHistory: user.emailHistory.sort((a, b) => new Date(b.changedAt) - new Date(a.changedAt)), // Most recent first
+      totalEmailChanges: user.emailHistory.length
+    });
+  } catch (err) {
+    console.error('user-email-history error:', err);
+    res.status(500).json({ error: 'Failed to get user email history' });
+  }
+});
+
+// Search user by any previous email (for support recovery)
+app.get('/find-user-by-email/:email', async (req, res) => {
+  const { email } = req.params;
+  if (!email) return res.status(400).json({ error: 'Email parameter required' });
+  
+  try {
+    // Search in both current email and email history
+    const user = await User.findOne({
+      $or: [
+        { email: email },
+        { 'emailHistory.email': email }
+      ]
+    }, { 
+      email: 1, 
+      emailHistory: 1, 
+      name: 1, 
+      userId: 1,
+      role: 1,
+      _id: 1
+    });
+    
+    if (!user) {
+      return res.status(404).json({ error: 'No user found with this email (current or historical)' });
+    }
+    
+    // Check if the searched email is current or historical
+    const isCurrentEmail = user.email === email;
+    const historicalEntry = user.emailHistory.find(h => h.email === email);
+    
+    res.json({
+      userId: user.userId,
+      name: user.name,
+      role: user.role,
+      currentEmail: user.email,
+      searchedEmail: email,
+      isCurrentEmail,
+      wasHistoricalEmail: !!historicalEntry,
+      historicalEmailDate: historicalEntry?.changedAt,
+      emailHistory: user.emailHistory.sort((a, b) => new Date(b.changedAt) - new Date(a.changedAt)),
+      totalEmailChanges: user.emailHistory.length
+    });
+  } catch (err) {
+    console.error('find-user-by-email error:', err);
+    res.status(500).json({ error: 'Failed to search for user by email' });
   }
 });
 
