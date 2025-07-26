@@ -101,14 +101,17 @@ app.post('/register', async (req, res) => {
     return res.status(400).json({ error: 'Email, name, and password are required.' });
   }
   
+  // Normalize email to lowercase for case-insensitive handling
+  const normalizedEmail = email.toLowerCase().trim();
+  
   // Validate email format
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(email)) {
+  if (!emailRegex.test(normalizedEmail)) {
     return res.status(400).json({ error: 'Invalid email format' });
   }
   
-  // Check if email already exists
-  const existing = await User.findOne({ email });
+  // Check if email already exists (case-insensitive)
+  const existing = await User.findOne({ email: normalizedEmail });
   if (existing) {
     return res.status(400).json({ error: 'Email already in use' });
   }
@@ -117,7 +120,7 @@ app.post('/register', async (req, res) => {
   
   // Create new user and use MongoDB ObjectId as stable Stream user ID
   const newUser = await User.create({ 
-    email, 
+    email: normalizedEmail, 
     name, 
     password: hash, 
     ...(role && { role }) 
@@ -140,13 +143,16 @@ app.post('/login', async (req, res) => {
     return res.status(400).json({ error: 'Email and password are required.' });
   }
   
+  // Normalize email to lowercase for case-insensitive handling
+  const normalizedEmail = email.toLowerCase().trim();
+  
   // Validate email format
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(email)) {
+  if (!emailRegex.test(normalizedEmail)) {
     return res.status(400).json({ error: 'Invalid email format' });
   }
   
-  const user = await User.findOne({ email });
+  const user = await User.findOne({ email: normalizedEmail });
   if (!user) {
     return res.status(401).json({ error: 'Invalid credentials' });
   }
@@ -381,32 +387,36 @@ app.post('/updateEmail', async (req, res) => {
   if (!oldEmail || !newEmail) return res.status(400).json({ error: 'oldEmail and newEmail are required' });
   
   try {
+    // Normalize emails to lowercase for case-insensitive handling
+    const normalizedOldEmail = oldEmail.toLowerCase().trim();
+    const normalizedNewEmail = newEmail.toLowerCase().trim();
+    
     // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(newEmail)) {
+    if (!emailRegex.test(normalizedNewEmail)) {
       return res.status(400).json({ error: 'Invalid email format' });
     }
     
     // Check if new email is already taken
-    const existingUser = await User.findOne({ email: newEmail });
+    const existingUser = await User.findOne({ email: normalizedNewEmail });
     if (existingUser) {
       return res.status(400).json({ error: 'Email already in use' });
     }
     
     // Find user by old email first
-    const user = await User.findOne({ email: oldEmail });
+    const user = await User.findOne({ email: normalizedOldEmail });
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
     
     // Add current email to history before updating
     user.emailHistory.push({
-      email: oldEmail,
+      email: normalizedOldEmail,
       changedAt: new Date()
     });
     
     // Update to new email
-    user.email = newEmail;
+    user.email = normalizedNewEmail;
     
     // Save changes
     const updatedUser = await user.save();
@@ -429,8 +439,11 @@ app.get('/user-email-history/:email', async (req, res) => {
   if (!email) return res.status(400).json({ error: 'Email parameter required' });
   
   try {
+    // Normalize email for case-insensitive search
+    const normalizedEmail = email.toLowerCase().trim();
+    
     // Find user by current email
-    const user = await User.findOne({ email }, { 
+    const user = await User.findOne({ email: normalizedEmail }, { 
       email: 1, 
       emailHistory: 1, 
       name: 1, 
@@ -463,11 +476,14 @@ app.get('/find-user-by-email/:email', async (req, res) => {
   if (!email) return res.status(400).json({ error: 'Email parameter required' });
   
   try {
+    // Normalize email for case-insensitive search
+    const normalizedEmail = email.toLowerCase().trim();
+    
     // Search in both current email and email history
     const user = await User.findOne({
       $or: [
-        { email: email },
-        { 'emailHistory.email': email }
+        { email: normalizedEmail },
+        { 'emailHistory.email': normalizedEmail }
       ]
     }, { 
       email: 1, 
@@ -483,15 +499,15 @@ app.get('/find-user-by-email/:email', async (req, res) => {
     }
     
     // Check if the searched email is current or historical
-    const isCurrentEmail = user.email === email;
-    const historicalEntry = user.emailHistory.find(h => h.email === email);
+    const isCurrentEmail = user.email === normalizedEmail;
+    const historicalEntry = user.emailHistory.find(h => h.email === normalizedEmail);
     
     res.json({
       userId: user.userId,
       name: user.name,
       role: user.role,
       currentEmail: user.email,
-      searchedEmail: email,
+      searchedEmail: normalizedEmail,
       isCurrentEmail,
       wasHistoricalEmail: !!historicalEntry,
       historicalEmailDate: historicalEntry?.changedAt,
