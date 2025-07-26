@@ -221,11 +221,8 @@ app.post('/logEntry', async (req, res) => {
     return res.status(400).json({ error: 'messageId, coachId, createdAt required' });
   }
   try {
-    console.log(`💾 Saving log entry: messageId=${messageId}, coachId=${coachId}, createdAt=${createdAt}`);
-    
     // Parse the ISO8601 string to ensure proper Date conversion
     const parsedDate = new Date(createdAt);
-    console.log(`💾 Parsed date: ${parsedDate.toISOString()}`);
     
     const result = await LogEntry.updateOne(
       { messageId },
@@ -233,16 +230,8 @@ app.post('/logEntry', async (req, res) => {
       { upsert: true }
     );
     
-    console.log(`💾 Save result:`, result);
-    
     // Verify what was actually saved
     const saved = await LogEntry.findOne({ messageId }).select('messageId coachId createdAt category');
-    console.log(`💾 Verified saved entry:`, {
-      messageId: saved?.messageId,
-      coachId: saved?.coachId,
-      createdAt: saved?.createdAt?.toISOString(),
-      category: saved?.category
-    });
     
     res.json({ saved: true });
   } catch (err) {
@@ -295,14 +284,10 @@ app.get('/logs/dates', async (req, res) => {
   try {
     const offsetMinutes = parseInt(tzOffset);
     
-    console.log(`🔍 /logs/dates query: coachId=${coachId}, range=${startDate} to ${endDate}, tzOffset=${offsetMinutes}`);
-    
     // Parse dates and convert to UTC for database query
     // Client sends dates in their local timezone, we need to query in UTC
     const start = new Date(startDate + 'T00:00:00.000Z');
     const end = new Date(endDate + 'T23:59:59.999Z');
-    
-    console.log(`🔍 Query range in UTC: ${start.toISOString()} to ${end.toISOString()}`);
     
     // Get all log entries in the date range
     const entries = await LogEntry.find({
@@ -310,23 +295,16 @@ app.get('/logs/dates', async (req, res) => {
       createdAt: { $gte: start, $lte: end }
     }).select('createdAt messageId');
     
-    console.log(`🔍 Found ${entries.length} entries:`, entries.map(e => ({ 
-      messageId: e.messageId, 
-      createdAt: e.createdAt.toISOString() 
-    })));
-    
     // Extract unique dates in the user's local timezone
     const dateSet = new Set();
     entries.forEach(entry => {
       // Convert UTC createdAt to user's local timezone
       const localDate = new Date(entry.createdAt.getTime() + (offsetMinutes * 60 * 1000));
       const dateString = localDate.toISOString().split('T')[0];
-      console.log(`🔍 Entry ${entry.createdAt.toISOString()} -> local ${dateString}`);
       dateSet.add(dateString);
     });
     
     const dates = Array.from(dateSet).sort();
-    console.log(`🔍 Returning dates: ${JSON.stringify(dates)}`);
     
     // Reduce cache time for debugging
     res.set('Cache-Control', 'public, max-age=30');
@@ -347,28 +325,15 @@ app.delete('/logEntry/:messageId', async (req, res) => {
   }
   
   try {
-    console.log(`🗑️ Deleting log entry: messageId=${messageId}, coachId=${coachId}`);
-    
     // First check if the entry exists
     const existing = await LogEntry.findOne({ messageId, coachId }).select('messageId coachId createdAt');
-    if (existing) {
-      console.log(`🗑️ Found entry to delete:`, {
-        messageId: existing.messageId,
-        coachId: existing.coachId,
-        createdAt: existing.createdAt.toISOString()
-      });
-    } else {
-      console.log(`🗑️ Entry not found for deletion`);
-    }
     
     const result = await LogEntry.deleteOne({ messageId, coachId });
-    console.log(`🗑️ Delete result:`, result);
     
     if (result.deletedCount === 0) {
       return res.status(404).json({ error: 'Log entry not found or not authorized' });
     }
     
-    console.log(`✅ Successfully deleted log entry: ${messageId}`);
     res.json({ deleted: true, messageId });
   } catch (err) {
     console.error('logEntry delete error', err);
